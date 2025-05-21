@@ -13,12 +13,37 @@ function CartView({ onClose }) {
     clearCart,
   } = useContext(CartContext);
 
-  const { user, updateProfile } = useContext(UserContext);
+  const { user, updateProfile, registerPurchase } = useContext(UserContext);
   const navigate = useNavigate();
 
   const total = cartItems.reduce((acc, item) => acc + item.price * item.quantity, 0);
 
-  const handlePayment = () => {
+  // Función para enviar la compra al backend (puerto 8085)
+  async function enviarCompraBackend(numeroTarjeta, items) {
+    for (const item of items) {
+      const params = new URLSearchParams();
+      params.append('numeroTarjeta', numeroTarjeta);
+      params.append('isbn', item.isbn); // Aseguramos enviar ISBN, no id
+      params.append('cantidad', item.quantity);
+
+      const res = await fetch('https://abcd1234.ngrok.io/api', {
+        method: 'POST',
+        body: params,
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+
+        // Si te da error de CORS, descomenta estas líneas y configura CORS en backend:
+        // mode: 'cors',
+        // credentials: 'include',
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Error en la compra');
+      }
+    }
+  }
+
+  const handlePayment = async () => {
     if (!user) {
       onClose();
       navigate('/login');
@@ -40,44 +65,46 @@ function CartView({ onClose }) {
       return;
     }
 
-    // Descontar stock
-    for (let item of cartItems) {
-      const found = books.find(book => book.id === item.id);
-      if (found) found.stock -= item.quantity;
+    try {
+      // Enviar la compra al backend
+      await enviarCompraBackend(user.membership.id, cartItems);
+
+      // Actualizar historial de compra en memoria
+      const currentHistory = [...(user.purchaseHistory || [])];
+
+      cartItems.forEach(item => {
+        const existing = currentHistory.find(book => book.id === item.id);
+        if (existing) {
+          existing.quantity += item.quantity;
+        } else {
+          currentHistory.push({
+            id: item.id,
+            title: item.title,
+            author: item.author,
+            imageUrl: item.imageUrl,
+            quantity: item.quantity,
+          });
+        }
+      });
+
+      // Actualizar usuario con historial y nuevo saldo
+      const updatedUser = {
+        ...user,
+        membership: {
+          ...user.membership,
+          balance: user.membership.balance - total,
+        },
+        purchaseHistory: currentHistory
+      };
+
+      updateProfile(updatedUser);
+      clearCart();
+      alert('¡Compra realizada con éxito!');
+      onClose();
+
+    } catch (error) {
+      alert(`Error en la compra: ${error.message}`);
     }
-
-    // Actualizar historial de compra en memoria
-    const currentHistory = [...(user.purchaseHistory || [])];
-
-    cartItems.forEach(item => {
-      const existing = currentHistory.find(book => book.id === item.id);
-      if (existing) {
-        existing.quantity += item.quantity;
-      } else {
-        currentHistory.push({
-          id: item.id,
-          title: item.title,
-          author: item.author,
-          imageUrl: item.imageUrl,
-          quantity: item.quantity,
-        });
-      }
-    });
-
-    // Actualizar usuario con historial y nuevo saldo
-    const updatedUser = {
-      ...user,
-      membership: {
-        ...user.membership,
-        balance: user.membership.balance - total,
-      },
-      purchaseHistory: currentHistory
-    };
-
-    updateProfile(updatedUser);
-    clearCart();
-    alert('¡Compra realizada con éxito!');
-    onClose();
   };
 
   return (
@@ -117,7 +144,7 @@ function CartView({ onClose }) {
 }
 
 const styles = {
-    overlay: {
+  overlay: {
     position: 'fixed',
     top: 0,
     right: 0,

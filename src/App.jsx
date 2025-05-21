@@ -25,7 +25,7 @@ function App() {
 
   return (
     <div style={{ backgroundColor: '#dddddd', minHeight: '100vh' }}>
-      <Router>
+      <Router basename="/LibreriaFrontend">
         <header style={styles.header}>
           <div style={styles.topBar}>
             <nav style={styles.nav}>
